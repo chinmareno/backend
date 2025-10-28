@@ -1,0 +1,174 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model event_ratings {
+  id         String   @id @default(uuid()) 
+  created_at DateTime @default(now()) 
+  rating     Int
+  description String?
+  user   users  @relation(fields: [user_id], references: [id])
+  user_id String
+  event  events @relation(fields: [event_id], references: [id])
+  event_id String
+
+  @@unique([user_id, event_id])
+}
+
+model events {
+  id         String   @id @default(uuid()) 
+  created_at     DateTime @default(now()) 
+  name           String
+  price          Int
+  start_date     DateTime @db.Date
+  end_date       DateTime @db.Date
+  capacity_seat  Int      @db.SmallInt
+  available_seat Int      @db.SmallInt
+  description    String?
+  category       CATEGORY[]
+  location       LOCATION
+  vouchers       vouchers[] 
+  transactions   transactions[]
+  event_ratings  event_ratings[]
+
+  organizer   users @relation(fields: [organizer_id], references: [id])
+  organizer_id String
+}
+
+model transactions {
+  id         String   @id @default(uuid()) 
+  created_at DateTime       @default(now()) 
+  updated_at DateTime       @updatedAt 
+  status     TRANSACTION_STATUS @default(WAITING_FOR_PAYMENT)
+  event_id   String
+  event      events        @relation(fields: [event_id], references: [id])
+  user_id    String
+  user       users         @relation(fields: [user_id], references: [id])
+  payment_proof_url String?
+
+
+  coupons_used      coupons[]
+  voucher_id_used   String?
+  voucher_used      vouchers?     @relation(fields: [voucher_id_used], references: [id])
+}
+
+model users {
+  id               String   @id
+  created_at       DateTime @default(now())
+  role             ROLE
+  profile_picture_url  String?
+  referral_code    String? @unique @default(uuid())
+  username         String  @default("User")
+
+  events              events[]
+  transactions        transactions[]
+  event_ratings      event_ratings[]
+  coupons             coupons[] @relation("UserCoupons")
+  other_coupons       coupons[] @relation("UserOtherCoupons")
+}
+
+model coupons {
+  id              String   @id @default(uuid())
+  created_at      DateTime @default(now())
+  discount        Int
+
+  transaction_id  String?
+  transaction     transactions? @relation(fields: [transaction_id], references: [id])
+
+  user_id         String
+  user            users   @relation("UserCoupons", fields: [user_id], references: [id])
+
+  other_user_id   String
+  other_user      users   @relation("UserOtherCoupons", fields: [other_user_id], references: [id])
+
+  user_coupon_role USER_COUPON_ROLE
+
+  @@unique([user_id, other_user_id])
+}
+
+model vouchers {
+  id                  String        @id @default(uuid())
+  created_at          DateTime      @default(now())
+  code                String        
+  discount            Int
+  valid_from          DateTime      @default(now())
+  valid_until         DateTime
+  event_id            String?
+  is_active           Boolean       @default(true)
+  event               events?       @relation(fields: [event_id], references: [id])
+  transactions        transactions[]
+
+  @@unique([code, event_id])
+}
+
+enum USER_COUPON_ROLE {
+  REFERRER
+  CLAIMER
+}
+
+enum TRANSACTION_STATUS {
+  WAITING_FOR_PAYMENT
+  WAITING_FOR_ADMIN
+  DONE
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum ROLE {
+  CUSTOMER
+  ORGANIZER
+}
+
+enum CATEGORY {
+  MUSIC
+  ART
+  THEATER
+  COMEDY
+  SPORTS
+  TECHNOLOGY
+  EDUCATION
+  FOOD
+  BUSINESS
+  HEALTH
+  FITNESS
+  NETWORKING
+  FESTIVAL
+  WORKSHOP
+  CONFERENCE
+  GAMING
+  CHARITY
+  TRAVEL
+}
+
+enum LOCATION {
+  JAKARTA
+  SURABAYA
+  BANDUNG
+  YOGYAKARTA
+  MEDAN
+  BALI
+  SEMARANG
+  MAKASSAR
+  BEKASI
+  DEPOK
+  TANGERANG
+  PALEMBANG
+  SURAKARTA
+  MALANG
+  BATAM
+  BALIKPAPAN
+  BANJARMASIN
+  DENPASAR
+  BANDAR_LAMPUNG
+  PADANG
+  MANADO
+}
+

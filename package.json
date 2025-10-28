@@ -1,0 +1,35 @@
+{
+  "main": "index.js",
+  "scripts": {
+    "start": "nodemon index.ts & pino-pretty",
+    "seed": "ts-node scripts/seed",
+    "cleanup": "ts-node scripts/cleanup"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.16.3",
+    "@supabase/supabase-js": "^2.75.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "express-http-context": "^2.0.1",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pino": "^10.1.0",
+    "pino-http": "^11.0.0",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.9",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^24.6.2",
+    "@types/pino": "^7.0.4",
+    "nodemon": "^3.1.10",
+    "pino-pretty": "^13.1.2",
+    "prisma": "^6.18.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
