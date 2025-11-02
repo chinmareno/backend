@@ -9,10 +9,12 @@ export async function cleanup() {
   await prisma.coupons.deleteMany();
   await prisma.vouchers.deleteMany();
   await prisma.users.deleteMany();
+  await prisma.withdrawal_batches.deleteMany();
+  await prisma.attendees.deleteMany();
   const {
     data: { users },
   } = await supabase.auth.admin.listUsers();
-  for (const { id } of users) await supabase.auth.admin.deleteUser(id);
+  await Promise.all(users.map(({ id }) => supabase.auth.admin.deleteUser(id)));
 }
 
 cleanup()
@@ -22,5 +24,4 @@ cleanup()
   })
   .finally(async () => {
     logger.info("Cleanup Success");
-    await prisma.$disconnect();
   });

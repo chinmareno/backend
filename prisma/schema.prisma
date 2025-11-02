@@ -4,106 +4,185 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model event_ratings {
-  id         String   @id @default(uuid()) 
-  created_at DateTime @default(now()) 
-  rating     Int
-  description String?
-  user   users  @relation(fields: [user_id], references: [id])
-  user_id String
-  event  events @relation(fields: [event_id], references: [id])
-  event_id String
+  id           String   @id @default(uuid())
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+  rating       Int
+  description  String?
+
+  user         users    @relation(fields: [user_id], references: [id])
+  user_id      String
+
+  event        events   @relation(fields: [event_id], references: [id],onDelete:Cascade)
+  event_id     String
 
   @@unique([user_id, event_id])
 }
 
 model events {
-  id         String   @id @default(uuid()) 
-  created_at     DateTime @default(now()) 
-  name           String
-  price          Int
-  start_date     DateTime @db.Date
-  end_date       DateTime @db.Date
-  capacity_seat  Int      @db.SmallInt
-  available_seat Int      @db.SmallInt
-  description    String?
-  category       CATEGORY[]
-  location       LOCATION
-  vouchers       vouchers[] 
-  transactions   transactions[]
-  event_ratings  event_ratings[]
+  id              String        @id @default(uuid())
+  created_at      DateTime      @default(now())
+  updated_at      DateTime      @updatedAt
+  name            String
+  price           Int
+  start_date      DateTime      @db.Date
+  end_date        DateTime      @db.Date
+  capacity_seat   Int           @db.SmallInt
+  available_seat  Int           @db.SmallInt
+  description     String?
+  category        CATEGORY[]
+  location        LOCATION
 
-  organizer   users @relation(fields: [organizer_id], references: [id])
-  organizer_id String
+  organizer_id    String
+  organizer       users         @relation(fields: [organizer_id], references: [id])
+
+  vouchers        vouchers[]
+  transactions    transactions[]
+  event_ratings   event_ratings[]
+  attendees       attendees[]
 }
 
 model transactions {
-  id         String   @id @default(uuid()) 
-  created_at DateTime       @default(now()) 
-  updated_at DateTime       @updatedAt 
-  status     TRANSACTION_STATUS @default(WAITING_FOR_PAYMENT)
-  event_id   String
-  event      events        @relation(fields: [event_id], references: [id])
-  user_id    String
-  user       users         @relation(fields: [user_id], references: [id])
+  id                String            @id @default(uuid())
+  created_at        DateTime          @default(now())
+  updated_at        DateTime          @updatedAt
+  customer_name     String
+  status            TRANSACTION_STATUS @default(WAITING_FOR_PAYMENT)
   payment_proof_url String?
 
+  coupon_discount   Int               @default(0)
+  is_coupon_withdrawn    Boolean           @default(false)
+  coupon_withdrawn_at    DateTime?
 
-  coupons_used      coupons[]
-  voucher_id_used   String?
-  voucher_used      vouchers?     @relation(fields: [voucher_id_used], references: [id])
+  voucher_discount  Int               @default(0)
+  voucher_code      String?
+  voucher_id_used  String?
+  voucher_used     vouchers?  @relation(fields: [voucher_id_used], references: [id])
+
+  amount_paid       Int
+
+  admin_fee_amount         Int?
+  admin_fee_percentage Int?
+  admin_fee_paid_at DateTime?
+  is_admin_fee_paid Boolean           @default(false)
+  
+  expired_at        DateTime?
+  completed_at      DateTime?
+
+  event_id          String
+  event             events            @relation(fields: [event_id], references: [id], onDelete: Cascade)
+
+  organizer_id     String           
+  organizer_user   users @relation("OrganizerTransactions", fields: [organizer_id], references: [id])
+  customer_id      String
+  customer_user    users @relation("CustomerTransactions", fields: [customer_id], references: [id])
+
+  coupons_used     coupons[] 
+
+
+  attendee        attendees?
+
+  withdrawal_batches_id String?
+  withdrawal_batches withdrawal_batches? @relation(fields: [withdrawal_batches_id], references: [id])
+}
+
+model withdrawal_batches {
+  id           String      @id @default(uuid())
+  created_at   DateTime    @default(now())
+  updated_at   DateTime    @updatedAt
+  is_approved  Boolean     @default(false)
+
+  organizer_id String
+  organizer    users       @relation(fields: [organizer_id], references: [id])
+
+  transactions transactions[]
+}
+
+model attendees {
+  id           String      @id @default(uuid())
+  created_at   DateTime    @default(now())
+  updated_at   DateTime    @updatedAt
+  is_accepted  Boolean     @default(false)
+
+  user_id      String
+  user         users       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  event_id     String
+  event        events      @relation(fields: [event_id], references: [id], onDelete: Cascade)
+
+  transaction_id  String @unique
+  transaction transactions  @relation(fields: [transaction_id], references: [id], onDelete: Cascade)
+  
+  @@unique([user_id, event_id])
 }
 
 model users {
-  id               String   @id
-  created_at       DateTime @default(now())
-  role             ROLE
-  profile_picture_url  String?
-  referral_code    String? @unique @default(uuid())
-  username         String  @default("User")
+  id                       String          @id
+  created_at               DateTime        @default(now())
+  updated_at               DateTime        @updatedAt
+  role                     ROLE
+  profile_picture_url      String?
+  referral_code            String?         @unique @default(uuid())
+  username                 String          @default("User")
+  email                    String
 
-  events              events[]
-  transactions        transactions[]
-  event_ratings      event_ratings[]
-  coupons             coupons[] @relation("UserCoupons")
-  other_coupons       coupons[] @relation("UserOtherCoupons")
+  attendees                attendees[]
+  events                   events[]
+
+  transactions_as_customer  transactions[] @relation("CustomerTransactions")
+  transactions_as_organizer transactions[] @relation("OrganizerTransactions")
+
+  event_ratings            event_ratings[]
+
+  withdrawal_batches     withdrawal_batches[]
+
+  coupons_as_referrer    coupons[] @relation("ReferrerCoupons")
+  coupons_as_claimer     coupons[] @relation("ClaimerCoupons")
 }
 
 model coupons {
-  id              String   @id @default(uuid())
-  created_at      DateTime @default(now())
-  discount        Int
+  id                      String           @id @default(uuid())
+  created_at              DateTime         @default(now())
+  updated_at              DateTime         @updatedAt
+  expired_at              DateTime
+  discount                Int
+  is_used                 Boolean          @default(false)
 
-  transaction_id  String?
-  transaction     transactions? @relation(fields: [transaction_id], references: [id])
+  user_coupon_role        USER_COUPON_ROLE
 
-  user_id         String
-  user            users   @relation("UserCoupons", fields: [user_id], references: [id])
+  used_by_transaction_id  String?
+  used_by_transaction     transactions?    @relation(fields: [used_by_transaction_id], references: [id])
 
-  other_user_id   String
-  other_user      users   @relation("UserOtherCoupons", fields: [other_user_id], references: [id])
+  referrer_id  String
+  referrer     users    @relation("ReferrerCoupons", fields: [referrer_id], references: [id])
 
-  user_coupon_role USER_COUPON_ROLE
+  claimer_id   String
+  claimer      users    @relation("ClaimerCoupons", fields: [claimer_id], references: [id])
 
-  @@unique([user_id, other_user_id])
+
+  @@unique([referrer_id, claimer_id,user_coupon_role])
 }
 
+
 model vouchers {
-  id                  String        @id @default(uuid())
-  created_at          DateTime      @default(now())
-  code                String        
-  discount            Int
-  valid_from          DateTime      @default(now())
-  valid_until         DateTime
-  event_id            String?
-  is_active           Boolean       @default(true)
-  event               events?       @relation(fields: [event_id], references: [id])
-  transactions        transactions[]
+  id              String         @id @default(uuid())
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+  code            String
+  discount        Int
+  valid_from      DateTime       @default(now())
+  valid_until     DateTime
+  is_active       Boolean        @default(true)
+
+  event_id        String?
+  event           events?        @relation(fields: [event_id], references: [id])
+
+  transactions    transactions[]
 
   @@unique([code, event_id])
 }
@@ -125,6 +204,7 @@ enum TRANSACTION_STATUS {
 enum ROLE {
   CUSTOMER
   ORGANIZER
+  ADMIN
 }
 
 enum CATEGORY {

@@ -10,6 +10,8 @@ import { AppError } from "../errors/AppError";
 import { TRANSACTION_STATUS } from "../generated/prisma";
 import * as httpContext from "express-http-context";
 import { isCustomer } from "../middleware/isCustomer";
+import { PublicEventSelect } from "../dto/event";
+import { getAttendeesByEventId } from "../services/attendees/getAttendeesByEventId";
 
 const router = express.Router();
 
@@ -19,10 +21,7 @@ router.get("/user/", isCustomer, async (req, res, next) => {
     const { data, error } = QueryEventSchema.safeParse(req.query);
     if (error) throw error;
 
-    const { category, location, isFree, search, lastEventId, status } = data;
-
-    const user = await prisma.users.findUnique({ where: { id: userId } });
-    if (!user) throw new AppError("User not found", 404);
+    const { category, location, is_free, search, last_event_Id, status } = data;
 
     let transactionStatus: TRANSACTION_STATUS | null = null;
     if (status === "UNPAID") transactionStatus = "WAITING_FOR_PAYMENT";
@@ -31,73 +30,48 @@ router.get("/user/", isCustomer, async (req, res, next) => {
     else if (status === "REJECTED") transactionStatus = "REJECTED";
     else if (status === "CANCELLED") transactionStatus = "CANCELLED";
     else if (status === "EXPIRED") transactionStatus = "EXPIRED";
-    const isAccepted = status === "ACCEPTED";
 
     const now = new Date();
-    const events = await prisma.events.findMany({
-      where: {
-        end_date: { gte: now },
-        category: category && { hasEvery: category },
-        location,
-        price: isFree ? 0 : undefined,
-        name: search && { contains: search, mode: "insensitive" },
-        available_seat: { gt: 0 },
-        transactions: transactionStatus
-          ? { some: { status: transactionStatus, user_id: userId } }
-          : {
-              none: {
-                status: {
-                  in: ["DONE", "WAITING_FOR_ADMIN", "WAITING_FOR_PAYMENT"],
-                },
-                user_id: userId,
+    const where = {
+      end_date: { gte: now },
+      category: category && { hasEvery: category },
+      location,
+      price: is_free ? 0 : undefined,
+      name: search && { contains: search, mode: "insensitive" as const },
+      available_seat: { gt: 0 },
+      transactions: transactionStatus
+        ? { some: { status: transactionStatus, customer_id: userId } }
+        : {
+            none: {
+              status: {
+                in: [
+                  "DONE",
+                  "WAITING_FOR_ADMIN",
+                  "WAITING_FOR_PAYMENT",
+                ] as TRANSACTION_STATUS[],
               },
+              customer_id: userId,
             },
-      },
-      orderBy: [{ start_date: "desc" }, { id: "desc" }],
-      include: {
-        transactions: isAccepted ? { where: { status: "DONE" } } : false,
-      },
-      take: 5,
-      ...(lastEventId ? { cursor: { id: lastEventId }, skip: 1 } : {}),
-    });
+          },
+    };
 
-    const total = await prisma.events.count({
-      where: {
-        end_date: { gte: now },
-        category: category && { hasEvery: category },
-        location,
-        price: isFree ? 0 : undefined,
-        name: search && { contains: search, mode: "insensitive" },
-        available_seat: { gt: 0 },
-        transactions: transactionStatus
-          ? { some: { status: transactionStatus, user_id: userId } }
-          : {
-              none: {
-                status: {
-                  in: ["DONE", "WAITING_FOR_ADMIN", "WAITING_FOR_PAYMENT"],
-                },
-                user_id: userId,
-              },
-            },
-      },
-    });
+    const [events, total] = await Promise.all([
+      prisma.events.findMany({
+        where,
+        orderBy: [{ start_date: "desc" }, { id: "desc" }],
 
-    if (isAccepted) {
-      const sortedEvents = events.sort(
-        (a, b) =>
-          b.transactions[0].updated_at.getTime() -
-          a.transactions[0].updated_at.getTime()
-      );
-      return res.json({
-        success: true,
-        message: "Events user fetched successfully",
-        data: { events: sortedEvents, total },
-      });
-    }
+        take: 5,
+        ...(last_event_Id ? { cursor: { id: last_event_Id }, skip: 1 } : {}),
+      }),
+      prisma.events.count({
+        where,
+      }),
+    ]);
+
     return res.json({
       success: true,
       message: "Events user fetched successfully",
-      data: { events: events, total },
+      data: { events, total },
     });
   } catch (error) {
     next(error);
@@ -108,15 +82,11 @@ router.get("/organizer/", isOrganizer, async (req, res, next) => {
   try {
     const { id: organizerId } = httpContext.get("user");
 
-    const organizer = await prisma.users.findUnique({
-      where: { id: organizerId },
-    });
-    if (!organizer) throw new AppError("Organizer not found", 404);
-
     const events = await prisma.events.findMany({
       where: {
         organizer_id: organizerId,
       },
+      select: PublicEventSelect,
       orderBy: [{ start_date: "desc" }, { id: "desc" }],
     });
 
@@ -139,62 +109,12 @@ router.get("/:id/attendees", isOrganizer, async (req, res, next) => {
     });
     if (!event) throw new AppError("Event not found", 404);
 
-    const attendees = await prisma.users.findMany({
-      where: {
-        transactions: {
-          some: {
-            event_id: eventId,
-            status: { in: ["WAITING_FOR_ADMIN", "DONE"] },
-          },
-        },
-      },
-      include: {
-        transactions: {
-          include: {
-            coupons_used: true,
-            voucher_used: true,
-          },
-          where: {
-            event_id: eventId,
-            status: { in: ["WAITING_FOR_ADMIN", "DONE"] },
-          },
-        },
-      },
-    });
-
-    const attendeesMapped = attendees.map(({ transactions, ...rest }) => {
-      const attendeeTransaction = transactions[0];
-      const isAccepted = attendeeTransaction.status === "DONE";
-      const basePrice = event.price;
-      const voucherDiscount = attendeeTransaction.voucher_used?.discount || 0;
-      const voucherCode = attendeeTransaction.voucher_used?.code;
-
-      let couponDiscount = 0;
-      if (attendeeTransaction.coupons_used.length > 0)
-        couponDiscount += attendeeTransaction.coupons_used.reduce(
-          (acc, c) => acc + c.discount,
-          0
-        );
-      const totalDiscount = voucherDiscount + couponDiscount;
-      const amountPaid = Math.max(basePrice - totalDiscount, 0);
-      return {
-        ...rest,
-        eventName: event.name,
-        eventPrice: basePrice,
-        transactionId: attendeeTransaction.id,
-        couponDiscount,
-        voucherDiscount,
-        voucherCode,
-        amountPaid,
-        isAccepted,
-        payment_proof_url: attendeeTransaction.payment_proof_url,
-      };
-    });
+    const attendees = await getAttendeesByEventId(eventId);
 
     return res.json({
       success: true,
       message: "Attendees fetched successfully",
-      data: attendeesMapped,
+      data: attendees,
     });
   } catch (error) {
     next(error);
@@ -209,6 +129,7 @@ router.get("/:id", async (req, res, next) => {
       include: { organizer: true, event_ratings: true },
     });
     if (!event) throw new AppError("Event not found", 404);
+
     const eventRatingTotal = event.event_ratings.reduce(
       (a, r) => a + r.rating,
       0

@@ -9,6 +9,8 @@ import {
 import { AppError } from "../errors/AppError";
 import * as httpContext from "express-http-context";
 import { isOrganizer } from "../middleware/isOrganizer";
+import { ratingCacheKey } from "../cacheKey/ratingCacheKey";
+import { cache } from "../utils/cache";
 
 const router = express.Router();
 
@@ -17,15 +19,25 @@ router.get("/user", isCustomer, async (req, res, next) => {
     const { data, success, error } = QueryRatingSchema.safeParse(req.query);
     if (!success) throw error;
 
-    const { id: userId } = httpContext.get("user");
     const { event_id } = data;
-    const eventRatings = await prisma.event_ratings.findMany({
-      where: { user_id: userId, event_id },
+    const { id: userId } = httpContext.get("user");
+    const cacheKey = ratingCacheKey({
+      eventId: event_id,
+      role: "customer",
     });
+    let ratingCache = cache.get(cacheKey);
+
+    if (!ratingCache) {
+      const eventRatings = await prisma.event_ratings.findMany({
+        where: { user_id: userId, event_id },
+      });
+      cache.set(cacheKey, eventRatings);
+      ratingCache = eventRatings;
+    }
     return res.json({
       success: true,
       message: "Event ratings fetched successfully",
-      data: eventRatings,
+      data: ratingCache,
     });
   } catch (error) {
     next(error);
@@ -37,14 +49,24 @@ router.get("/organizer/event/:id", isOrganizer, async (req, res, next) => {
     const { id: eventId } = req.params;
 
     const { id: organizerId } = httpContext.get("user");
-    const eventRatings = await prisma.event_ratings.findMany({
-      where: { event: { organizer_id: organizerId, id: eventId } },
-      include: { user: true },
+
+    const cacheKey = ratingCacheKey({
+      eventId: eventId,
+      role: "organizer",
     });
+    let ratingCache = cache.get(cacheKey);
+    if (!ratingCache) {
+      const eventRatings = await prisma.event_ratings.findMany({
+        where: { event: { organizer_id: organizerId, id: eventId } },
+        include: { user: true },
+      });
+      cache.set(cacheKey, eventRatings);
+      ratingCache = eventRatings;
+    }
     return res.json({
       success: true,
       message: "Event ratings fetched successfully",
-      data: eventRatings,
+      data: ratingCache,
     });
   } catch (error) {
     next(error);
@@ -88,6 +110,17 @@ router.post("/", isCustomer, async (req, res, next) => {
     const eventRating = await prisma.event_ratings.create({
       data: { rating, event_id, user_id: userId, description },
     });
+
+    const customerCacheKey = ratingCacheKey({
+      eventId: event_id,
+      role: "customer",
+    });
+    const organizerCacheKey = ratingCacheKey({
+      eventId: event_id,
+      role: "organizer",
+    });
+    cache.delete(customerCacheKey);
+    cache.delete(organizerCacheKey);
     return res.json({
       success: true,
       message: "Event rating created successfully",
@@ -122,6 +155,17 @@ router.patch("/:id", isCustomer, async (req, res, next) => {
       data: { rating, description },
     });
 
+    const eventId = eventRating.event_id;
+    const customerCacheKey = ratingCacheKey({
+      eventId,
+      role: "customer",
+    });
+    const organizerCacheKey = ratingCacheKey({
+      eventId,
+      role: "organizer",
+    });
+    cache.delete(customerCacheKey);
+    cache.delete(organizerCacheKey);
     return res.json({
       success: true,
       message: "Event rating updated successfully",

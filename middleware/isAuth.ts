@@ -1,20 +1,29 @@
 import { NextFunction, Request, Response } from "express";
-import { supabase } from "../supabase";
 import { prisma } from "../prisma/db";
 import { ROLE } from "../generated/prisma";
 import * as httpContext from "express-http-context";
-import { AuthError } from "../errors/AuthError";
 import { AppError } from "../errors/AppError";
-import jwt from "jsonwebtoken";
+import { verifyToken } from "../utils/verifyToken";
+import { cache } from "../utils/cache";
+import { userCacheKey } from "../cacheKey/userCacheKey";
 
 export type User = {
   id: string;
   referral_code: string | null;
-  created_at: Date;
   role: ROLE;
   profile_picture_url: string | null;
   username: string;
+  email: string;
 };
+
+export const AuthUserSelect = {
+  id: true,
+  referral_code: true,
+  role: true,
+  profile_picture_url: true,
+  username: true,
+  email: true,
+} as const;
 
 export const isAuth = async (
   req: Request,
@@ -22,28 +31,30 @@ export const isAuth = async (
   next: NextFunction
 ) => {
   try {
-    const token = req.cookies.token;
-    console.log(token);
-    if (!token)
-      throw new AuthError(
-        "Session expired. try to relogin",
-        401,
-        "Token not found"
-      );
-    const JWT_SECRET = process.env.JWT_SECRET!;
-    console.log(JWT_SECRET);
-    const decodedToken = jwt.verify(token, JWT_SECRET) as { userId: string };
-    console.log(decodedToken);
-    const userId = decodedToken.userId;
-    const user = await prisma.users.findUnique({ where: { id: userId } });
-    if (!user)
-      throw new AuthError(
-        "Invalid token",
-        401,
-        "User id in jwt is being tampered"
-      );
+    const data = await verifyToken(req);
+    const { id: userId } = data.user;
+    const cacheKey = userCacheKey(userId);
 
-    httpContext.set("user", user);
+    let userCache = cache.get(cacheKey);
+    if (userCache) console.log("ada user cacheee");
+    if (!userCache) {
+      console.log("rip");
+      const user = await prisma.users.findUnique({
+        where: { id: userId },
+        select: AuthUserSelect,
+      });
+      if (!user)
+        throw new AppError(
+          "Something went wrong.",
+          500,
+          "User creation error in isAuth middleware"
+        );
+      cache.set(cacheKey, user);
+      userCache = user;
+    }
+
+    httpContext.set("user", userCache as User);
+    next();
   } catch (error) {
     next(error);
   }

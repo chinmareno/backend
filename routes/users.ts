@@ -1,16 +1,19 @@
 import express from "express";
 import { prisma } from "../prisma/db";
 import { ChangeProfilePictureSchema, CreateUserSchema } from "../schemas/user";
-import { AppError } from "../errors/AppError";
 import * as httpContext from "express-http-context";
+import { AuthUserSelect, isAuth } from "../middleware/isAuth";
+import { userCacheKey } from "../cacheKey/userCacheKey";
+import { cache } from "../utils/cache";
 
 const router = express.Router();
 
+// For sake of testing
 router.get("/", async (req, res, next) => {
   try {
     const users = await prisma.users.findMany({
-      include: { coupons: true },
-      orderBy: { created_at: "desc" },
+      include: { coupons_as_claimer: true },
+      orderBy: [{ role: "desc" }],
     });
 
     return res.json({
@@ -23,7 +26,7 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-router.get("/profile", async (req, res, next) => {
+router.get("/profile", isAuth, async (req, res, next) => {
   try {
     const user = httpContext.get("user");
 
@@ -51,7 +54,9 @@ router.post("/", async (req, res, next) => {
         role: email.endsWith(adminEmail) ? "ORGANIZER" : "CUSTOMER",
         id: user_id,
         username,
+        email,
       },
+      select: AuthUserSelect,
     });
     return res.json({
       success: true,
@@ -63,25 +68,24 @@ router.post("/", async (req, res, next) => {
   }
 });
 
-router.patch("/profile", async (req, res, next) => {
+router.patch("/profile", isAuth, async (req, res, next) => {
   try {
     const { id: userId } = httpContext.get("user");
     const { data, success, error } = ChangeProfilePictureSchema.safeParse(
       req.body
     );
-    if (!success) {
-      throw error;
-    }
+    if (!success) throw error;
 
     const { profile_picture_url } = data;
-
-    const user = await prisma.users.findUnique({ where: { id: userId } });
-    if (!user) throw new AppError("User not found", 404);
 
     const updatedUser = await prisma.users.update({
       where: { id: userId },
       data: { profile_picture_url },
+      select: AuthUserSelect,
     });
+    const cacheKey = userCacheKey(userId);
+    cache.delete(cacheKey);
+
     return res.json({
       success: true,
       message: "User updated successfully",

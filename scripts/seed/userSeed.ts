@@ -18,13 +18,14 @@ export const userSeed = async ({
   const { data } = await supabase.auth.signUp({ email, password });
   if (!data.user) throw new Error("Signup Failed");
 
-  const isOrganizer = role === "ORGANIZER";
+  const isCustomer = role === "CUSTOMER";
   const user = await prisma.users.create({
     data: {
       id: data.user.id,
       username,
       role,
-      referral_code: isOrganizer ? null : undefined,
+      referral_code: !isCustomer ? undefined : null,
+      email,
     },
   });
 

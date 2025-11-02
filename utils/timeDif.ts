@@ -16,5 +16,6 @@ export const timeDif = (target: Date) => {
     hours,
     days,
     months,
+    isPassed: diffMs < 0,
   };
 };

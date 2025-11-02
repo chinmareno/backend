@@ -57,14 +57,14 @@ export const QueryEventSchema = z.strictObject({
 
   location: z.enum(LOCATION).optional(),
 
-  isFree: z
+  is_free: z
     .literal("true")
     .optional()
     .transform((val) => (val === "true" ? true : undefined)),
 
   search: z.string().optional(),
 
-  lastEventId: z.uuid().optional(),
+  last_event_Id: z.uuid().optional(),
 
   userId: z.string().optional(),
 

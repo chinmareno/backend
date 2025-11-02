@@ -10,6 +10,7 @@ import { AppError } from "../errors/AppError";
 
 const router = express.Router();
 
+// For testing
 router.get("/", async (req, res, next) => {
   try {
     const vouchers = await prisma.vouchers.findMany({
@@ -35,9 +36,8 @@ router.get("/", async (req, res, next) => {
 router.get("/validate", async (req, res, next) => {
   try {
     const { success, data, error } = ValidateVoucherSchema.safeParse(req.query);
-    if (!success) {
-      throw error;
-    }
+    if (!success) throw error;
+
     const { code, event_id } = data;
     const voucher = await prisma.vouchers.findUnique({
       where: { code_event_id: { code, event_id } },

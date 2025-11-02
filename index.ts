@@ -1,5 +1,6 @@
 import express from "express";
 import appRouter from "./routes";
+import userRouter from "./routes/users";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { errorHandler } from "./middleware/errorHandler";
@@ -9,6 +10,9 @@ import { isAuth } from "./middleware/isAuth";
 import * as httpContext from "express-http-context";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { prisma } from "./prisma/db";
+import { QueryAnalyticSchema } from "./schemas/analytic";
+import { Prisma } from "./generated/prisma";
 
 const app: express.Application = express();
 
@@ -18,7 +22,7 @@ const port = process.env.SERVER_PORT!;
 app.use(
   cors({
     credentials: true,
-    origin: [allowedOrigin, "http://192.168.1.6:3000"],
+    origin: [allowedOrigin],
   })
 );
 
@@ -40,6 +44,7 @@ app.use(httpContext.middleware);
 
 app.use(pinoHttp({ logger, autoLogging: false }));
 
+app.use("/users", userRouter);
 app.use("/", isAuth, appRouter);
 
 app.use(errorHandler);

@@ -20,5 +20,5 @@ export const EditRatingSchema = z.strictObject({
 });
 
 export const QueryRatingSchema = z.strictObject({
-  event_id: z.uuid("Invalid event ID format").optional(),
+  event_id: z.uuid("Invalid event ID format"),
 });
