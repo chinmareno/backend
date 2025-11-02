@@ -203,21 +203,22 @@ router.post("/", async (req, res, next) => {
         },
         include: { voucher_used: true },
       });
-
-      await tx.events.update({
-        where: { id: transaction.event_id },
-        data: {
-          attendees: {
-            create: {
-              transaction_id: transaction.id,
-              is_accepted: false,
-              user_id: userId,
-            },
+      if (isFree) {
+        await tx.attendees.create({
+          data: {
+            transaction_id: transaction.id,
+            is_accepted: false,
+            user_id: userId,
+            event_id: transaction.event_id,
           },
-          available_seat: { decrement: 1 },
-        },
-      });
-
+        });
+        await tx.events.update({
+          where: { id: transaction.event_id },
+          data: {
+            available_seat: { decrement: 1 },
+          },
+        });
+      }
       if (shouldApplyCoupons && coupon_ids && coupon_ids.length > 0) {
         await tx.coupons.updateMany({
           where: { id: { in: coupon_ids } },
@@ -289,6 +290,12 @@ router.patch("/payment/:id", isCustomer, async (req, res, next) => {
         status: "WAITING_FOR_ADMIN",
         payment_proof_url,
         expired_at: expiryDate,
+        attendee: {
+          create: {
+            event_id: transaction.event_id,
+            user_id: transaction.customer_id,
+          },
+        },
       },
     });
 
@@ -375,7 +382,15 @@ router.patch("/accept/:id", isOrganizer, async (req, res, next) => {
 
     const updatedTransaction = await prisma.transactions.update({
       where: { id },
-      data: { status: "DONE", completed_at: now },
+      data: {
+        status: "DONE",
+        completed_at: now,
+        attendee: {
+          update: {
+            is_accepted: true,
+          },
+        },
+      },
     });
 
     const event = transaction.event;

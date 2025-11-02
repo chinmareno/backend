@@ -24,6 +24,7 @@ export const transactionSeed = async ({
   });
   const events = await prisma.events.findMany({
     select: { id: true, organizer_id: true, price: true },
+    skip: 3,
   });
 
   if (customers.length === 0 || events.length === 0) {
