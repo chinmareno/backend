@@ -24,7 +24,7 @@ export const userSeed = async ({
       id: data.user.id,
       username,
       role,
-      referral_code: !isCustomer ? undefined : null,
+      referral_code: isCustomer ? undefined : null,
       email,
     },
   });

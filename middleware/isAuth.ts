@@ -36,9 +36,7 @@ export const isAuth = async (
     const cacheKey = userCacheKey(userId);
 
     let userCache = cache.get(cacheKey);
-    if (userCache) console.log("ada user cacheee");
     if (!userCache) {
-      console.log("rip");
       const user = await prisma.users.findUnique({
         where: { id: userId },
         select: AuthUserSelect,
