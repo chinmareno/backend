@@ -131,10 +131,17 @@ router.post("/", async (req, res, next) => {
     if (coupon_ids.length > 0) {
       const validCoupons = await prisma.coupons.findMany({
         where: {
-          claimer_id: userId,
           id: { in: coupon_ids },
           is_used: false,
+
           expired_at: { gt: now },
+          OR: [
+            { claimer_id: userId, user_coupon_role: "CLAIMER" },
+            {
+              referrer_id: userId,
+              user_coupon_role: "REFERRER",
+            },
+          ],
         },
       });
 
@@ -453,7 +460,7 @@ router.patch("/reject/:id", isOrganizer, async (req, res, next) => {
 
       await tx.coupons.updateMany({
         where: { used_by_transaction_id: updatedTransaction.id },
-        data: { is_used: false },
+        data: { is_used: false, used_by_transaction_id: null },
       });
       return updatedTransaction;
     });
