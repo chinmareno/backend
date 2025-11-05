@@ -47,13 +47,11 @@ router.get("/user/", async (req, res, next) => {
 
     const { status, event_id } = data;
     await cleanupExpiredTransactions({ eventId: event_id, userId });
-    const now = new Date();
     const transactions = await prisma.transactions.findMany({
       where: {
         customer_id: userId,
         event_id,
-        expired_at: { gt: now },
-        status,
+        status: { in: status },
       },
     });
 
@@ -268,11 +266,12 @@ router.patch("/payment/:id", isCustomer, async (req, res, next) => {
           data: {
             status: "EXPIRED",
             event: { update: { available_seat: { increment: 1 } } },
+            attendee: { delete: { user_id: userId } },
           },
         });
         await tx.coupons.updateMany({
           where: { used_by_transaction_id: id },
-          data: { is_used: false },
+          data: { is_used: false, used_by_transaction_id: null },
         });
       });
       throw new AppError(
@@ -332,14 +331,7 @@ router.patch("/cancel/:id", isCustomer, async (req, res, next) => {
           },
         },
       });
-      await tx.attendees.delete({
-        where: {
-          user_id_event_id: {
-            user_id: userId,
-            event_id: updatedTransaction.event_id,
-          },
-        },
-      });
+
       await tx.coupons.updateMany({
         where: { used_by_transaction_id: updatedTransaction.id },
         data: { is_used: false },
@@ -455,15 +447,7 @@ router.patch("/reject/:id", isOrganizer, async (req, res, next) => {
           status: "REJECTED",
           event: { update: { available_seat: { increment: 1 } } },
           expired_at: null,
-        },
-      });
-
-      await tx.attendees.delete({
-        where: {
-          user_id_event_id: {
-            user_id: updatedTransaction.customer_id,
-            event_id: updatedTransaction.event_id,
-          },
+          attendee: { delete: { user_id: transaction.customer_id } },
         },
       });
 

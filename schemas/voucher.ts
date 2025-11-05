@@ -28,6 +28,7 @@ export const ValidateVoucherSchema = z.strictObject({
   code: z
     .string()
     .trim()
+    .max(40)
     .transform((val) => val.toUpperCase()),
 
   event_id: z.uuid(),

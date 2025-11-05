@@ -15,13 +15,10 @@ export async function cleanup() {
     data: { users },
   } = await supabase.auth.admin.listUsers();
   await Promise.all(users.map(({ id }) => supabase.auth.admin.deleteUser(id)));
+  logger.info("Cleanup Success");
 }
 
-cleanup()
-  .catch((err) => {
-    logger.error(err);
-    process.exit(1);
-  })
-  .finally(async () => {
-    logger.info("Cleanup Success");
-  });
+cleanup().catch((err) => {
+  logger.error(err);
+  process.exit(1);
+});

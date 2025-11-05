@@ -116,7 +116,7 @@ model attendees {
   event        events      @relation(fields: [event_id], references: [id], onDelete: Cascade)
 
   transaction_id  String @unique
-  transaction transactions  @relation(fields: [transaction_id], references: [id], onDelete: Cascade)
+  transaction transactions  @relation(fields: [transaction_id], references: [id], onDelete: Cascade  )
   
   @@unique([user_id, event_id])
 }

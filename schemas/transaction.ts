@@ -14,7 +14,11 @@ export const CompleteTransactionSchema = z.strictObject({
 });
 
 export const QueryTransactionSchema = z.strictObject({
-  status: z.enum(TRANSACTION_STATUS).optional(),
+  status: z
+    .string()
+    .optional()
+    .transform((val) => val && val.split(","))
+    .pipe(z.enum(TRANSACTION_STATUS).array().optional()),
 
   event_id: z.uuid().optional(),
 });

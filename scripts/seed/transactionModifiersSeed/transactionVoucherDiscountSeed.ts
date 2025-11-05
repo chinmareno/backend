@@ -21,6 +21,7 @@ export const transactionVoucherDiscountSeed = async ({
       amount_paid: true,
       event: { select: { price: true } },
     },
+    where: { status: "DONE" },
   });
 
   if (transactions.length === 0) {

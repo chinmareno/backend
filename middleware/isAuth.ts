@@ -32,23 +32,32 @@ export const isAuth = async (
 ) => {
   try {
     const data = await verifyToken(req);
-    const { id: userId } = data.user;
-    const cacheKey = userCacheKey(userId);
+    const supabaseUser = data.user;
+    const cacheKey = userCacheKey(supabaseUser.id);
 
     let userCache = cache.get(cacheKey);
     if (!userCache) {
       const user = await prisma.users.findUnique({
-        where: { id: userId },
+        where: { id: supabaseUser.id },
         select: AuthUserSelect,
       });
-      if (!user)
-        throw new AppError(
-          "Something went wrong.",
-          500,
-          "User creation error in isAuth middleware"
-        );
-      cache.set(cacheKey, user);
-      userCache = user;
+      if (user) {
+        cache.set(cacheKey, user);
+        userCache = user;
+      } else {
+        const isOrganizer = supabaseUser.email?.endsWith("@organizer.com");
+        const createdUser = await prisma.users.create({
+          select: AuthUserSelect,
+          data: {
+            id: supabaseUser.id,
+            email: supabaseUser.email!,
+            role: isOrganizer ? "ORGANIZER" : "CUSTOMER",
+            username: "user",
+          },
+        });
+        cache.set(cacheKey, createdUser);
+        userCache = createdUser;
+      }
     }
 
     httpContext.set("user", userCache as User);

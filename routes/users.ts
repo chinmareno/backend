@@ -47,7 +47,7 @@ router.post("/", async (req, res, next) => {
       throw error;
     }
 
-    const adminEmail = process.env.ADMIN_EMAIL!;
+    const adminEmail = process.env.ORGANIZER_EMAIL!;
     const { email, username, user_id } = data;
     const user = await prisma.users.create({
       data: {

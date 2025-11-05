@@ -6,7 +6,11 @@ import { QueryAnalyticSchema } from "../schemas/analytic";
 import { isAdmin } from "../middleware/isAdmin";
 import { Prisma } from "../generated/prisma";
 import { cache } from "../utils/cache";
-import { analyticCacheKey } from "../cacheKey/analyticCacheKey";
+import {
+  analyticEventCacheKey,
+  analyticPeriodCacheKey,
+} from "../cacheKey/analyticCacheKey";
+import { AppError } from "../errors/AppError";
 
 const router = express.Router();
 
@@ -18,7 +22,7 @@ router.get("/organizer/", isOrganizer, async (req, res, next) => {
     const { id: organizerId } = httpContext.get("user");
     const { year, month } = data;
 
-    const cacheKey = analyticCacheKey({ role: "organizer", month, year });
+    const cacheKey = analyticPeriodCacheKey({ role: "organizer", month, year });
     let analyticCache = cache.get(cacheKey);
     if (analyticCache) console.log("tdk mengquery");
     if (!analyticCache) {
@@ -55,12 +59,12 @@ router.get("/organizer/", isOrganizer, async (req, res, next) => {
         }[]
       >`SELECT
             DATE_PART(${period}, completed_at) AS period_value,
-            COUNT(*) AS total_tickets_sold,
-            COUNT(DISTINCT event_id) AS total_events_held,
-            SUM(amount_paid + coupon_discount) AS gross_revenue,
-            SUM(voucher_discount) AS marketing_expense,
-            SUM(admin_fee_amount) AS administrative_expense,
-            SUM(amount_paid + coupon_discount - voucher_discount - admin_fee_amount) AS net_revenue
+            COALESCE(COUNT(*), 0) AS total_tickets_sold,
+            COALESCE(COUNT(DISTINCT event_id), 0) AS total_events_held,
+            COALESCE(SUM(amount_paid + coupon_discount), 0) AS gross_revenue,
+            COALESCE(SUM(voucher_discount), 0) AS marketing_expense,
+            COALESCE(SUM(admin_fee_amount), 0) AS administrative_expense,
+            COALESCE(SUM(amount_paid + coupon_discount - voucher_discount - admin_fee_amount), 0) AS net_revenue
           FROM "transactions"
           WHERE status = 'DONE'
           ${dateFilter}
@@ -118,13 +122,84 @@ router.get("/organizer/", isOrganizer, async (req, res, next) => {
   }
 });
 
+router.get("/organizer/event/:id", isOrganizer, async (req, res, next) => {
+  try {
+    const { id: organizerId } = httpContext.get("user");
+    const { id: eventId } = req.params;
+
+    const cacheKey = analyticEventCacheKey(eventId);
+    const event = await prisma.events.findUnique({ where: { id: eventId } });
+    if (!event) throw new AppError("Event not found", 404);
+
+    let analyticCache = cache.get(cacheKey);
+    if (!analyticCache) {
+      const rawAnalytic = await prisma.$queryRaw<
+        {
+          total_tickets_sold: number;
+          gross_revenue: number;
+          marketing_expense: number;
+          administrative_expense: number;
+          net_revenue: number;
+        }[]
+      >`SELECT
+            COUNT(*) AS total_tickets_sold,
+            COALESCE(SUM(amount_paid + coupon_discount), 0) AS gross_revenue,
+            COALESCE(SUM(voucher_discount), 0) AS marketing_expense,
+            COALESCE(SUM(admin_fee_amount), 0) AS administrative_expense,
+            COALESCE(SUM(amount_paid + coupon_discount - voucher_discount - admin_fee_amount), 0) AS net_revenue
+          FROM "transactions"
+          WHERE status = 'DONE'
+          AND event_id = ${eventId}
+          AND organizer_id = ${organizerId}
+        `;
+
+      const analytic = rawAnalytic.map(
+        ({
+          gross_revenue,
+          administrative_expense,
+          marketing_expense,
+          net_revenue,
+          total_tickets_sold,
+        }) => {
+          const grossRevenue = Number(gross_revenue);
+          const administrativeExpense = Number(administrative_expense);
+          const marketingExpense = Number(marketing_expense);
+          const netRevenue = Number(net_revenue);
+          const totalTicketsSold = Number(total_tickets_sold);
+
+          return {
+            grossRevenue,
+            administrativeExpense,
+            marketingExpense,
+            netRevenue,
+            totalTicketsSold,
+          };
+        }
+      );
+      const now = new Date();
+      const isPastEvent = now > event.end_date;
+      if (isPastEvent) {
+        cache.set(cacheKey, analytic[0]);
+      }
+      analyticCache = analytic[0];
+    }
+    return res.json({
+      success: true,
+      message: "Organizer's event analytic fetched successfully!",
+      data: analyticCache,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/admin/", isAdmin, async (req, res, next) => {
   try {
     const { success, data, error } = QueryAnalyticSchema.safeParse(req.query);
     if (!success) throw error;
 
     const { year, month } = data;
-    const cacheKey = analyticCacheKey({ role: "admin", month, year });
+    const cacheKey = analyticPeriodCacheKey({ role: "admin", month, year });
     let analyticCache = cache.get(cacheKey);
     if (analyticCache) console.log("tdk mengquery");
 
@@ -162,11 +237,11 @@ router.get("/admin/", isAdmin, async (req, res, next) => {
         }[]
       >`SELECT
             DATE_PART(${period}, completed_at) AS period_value,
-            COUNT(*) AS total_tickets_sold,
-            COUNT(DISTINCT event_id) AS total_events_held,
-            SUM(admin_fee_amount) AS gross_revenue,
-            SUM(coupon_discount) AS marketing_expense,
-            SUM(admin_fee_amount - coupon_discount) AS net_revenue
+            COALESCE(COUNT(*), 0) AS total_tickets_sold,
+            COALESCE(COUNT(DISTINCT event_id), 0) AS total_events_held,
+            COALESCE(SUM(admin_fee_amount), 0) AS gross_revenue,
+            COALESCE(SUM(coupon_discount), 0) AS marketing_expense,
+            COALESCE(SUM(admin_fee_amount - coupon_discount), 0) AS net_revenue
           FROM "transactions"
           WHERE status = 'DONE'
           ${dateFilter}

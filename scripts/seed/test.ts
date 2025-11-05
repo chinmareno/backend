@@ -18,7 +18,7 @@ export const test = () => {
 
   async function parallelTest() {
     console.log("Starting parallel test...");
-    const promises = [delay(5000, 1), delay(5000, 2), delay(5000, 3)];
+    const promises = [delay(8000, 1), delay(5000, 2), delay(7000, 3)];
     const results = await Promise.all(promises);
     results.forEach((r, i) => console.log(`Result ${i + 1}:`, r));
     console.log("Parallel test done");
